@@ -1,0 +1,579 @@
+#!/usr/bin/python
+import curses
+from curses import wrapper
+from curses.textpad import Textbox, rectangle
+import cats_parser
+import os
+os.environ.setdefault('ESCDELAY', '25')
+import re
+import pexpect
+import getpass
+
+screen = curses.initscr()
+
+def install(full_name,browsepad,browsepad_coords):
+	global got_pass
+	browsepad.clear()
+	
+	bpad_size=10
+	
+	browsepad.resize(bpad_size,curses.COLS-1)
+	screen.touchwin()
+								
+	if getpass.getuser()=="root":
+		portage = pexpect.spawn("emerge --color=n -a "+full_name)
+	else:
+		portage = pexpect.spawn("sudo emerge --color=n -a "+full_name)
+		if "got_pass" not in globals():		
+			portage.expect(".+\:", timeout=3)
+			browsepad.addstr("Password: ")
+										
+			screen.refresh()
+			browsepad.refresh(0,0, *browsepad_coords)
+											
+			got_pass=screen.getstr(3,2)
+									
+		portage.sendline(got_pass)
+		screen.refresh()
+		browsepad.refresh(0,0, *browsepad_coords)
+
+	browsepad.addstr("\nCalculating dependencies...\n")
+								
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+										
+	portage.expect("Would you like to merge these packages\? \[Yes\/No\]")
+	deps=re.findall("\[.+\] .+/.+",portage.before.decode("utf-8").rstrip())
+	
+	bpad_size+=len(deps)*2
+	browsepad.resize(bpad_size+3,curses.COLS-1)
+	
+	for d in deps:
+		browsepad.addstr(d+"\n")
+									
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+								
+	browsepad.addstr("Now installing, CTRL+C to cancel\n")
+	portage.sendline("Y")
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+	
+	if curses.has_colors():
+		curses.init_pair(1, curses.COLOR_GREEN,curses.COLOR_BLACK)
+	
+	for d in deps:
+		portage.expect("Emerging.+")
+		
+		if curses.has_colors():
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+		else:
+									
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.A_BOLD)
+										
+		screen.refresh()
+		browsepad.refresh(0,0, *browsepad_coords)
+										
+		portage.expect("Installing.+")
+										
+		if curses.has_colors():
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+		else:							
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.A_BOLD)
+										
+		screen.refresh()
+		browsepad.refresh(0,0, *browsepad_coords)
+										
+	portage.expect("No outdated packages were found on your system")
+	browsepad.addstr("Press any key to continue")
+	
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+	screen.getch()
+
+def delete(full_name,browsepad,browsepad_coords):
+	global got_pass
+	browsepad.clear()
+	
+	bpad_size=10
+	
+	browsepad.resize(bpad_size,curses.COLS-1)
+	screen.touchwin()
+								
+	if getpass.getuser()=="root":
+		portage = pexpect.spawn("emerge --color=n -a --depclean "+full_name)
+	else:
+		portage = pexpect.spawn("sudo emerge --color=n -a --depclean "+full_name)
+		if "got_pass" not in globals():		
+			portage.expect(".+\:", timeout=3)
+			browsepad.addstr("Password: ")
+										
+			screen.refresh()
+			browsepad.refresh(0,0, *browsepad_coords)
+											
+			got_pass=screen.getstr(3,2)
+									
+		portage.sendline(got_pass)
+		screen.refresh()
+		browsepad.refresh(0,0, *browsepad_coords)
+
+	browsepad.addstr("\nCalculating dependencies...\n")
+								
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+										
+	portage.expect("Would you like to unmerge these packages?")
+	
+	browsepad.addstr("Now unmerging, CTRL+C to cancel\n")
+	
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+	
+	portage.sendline("Y")
+	
+	try:
+		portage.expect("Unmerging.+"+full_name+".*",timeout=10)
+		if curses.has_colors():
+			curses.init_pair(1, curses.COLOR_GREEN,curses.COLOR_BLACK)
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+		else:
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n")
+	except pexpect.TIMEOUT:
+		pass
+	
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+	
+	portage.expect("GNU info directory index is")
+	
+	browsepad.addstr("Done. Press any key to return")
+	
+	screen.refresh()
+	browsepad.refresh(0,0, *browsepad_coords)
+	screen.getch()
+			
+def package_info(browsepad,browsepad_coords,main,sub,name):
+	browsepad.clear()
+	screen.touchwin()
+	info=cats_parser.getInfo(main,sub,name)
+	
+	scroll_pos=0
+	
+	def do_draw_info():	
+		browsepad.clear()
+		if info:
+			size=0
+			for x in info:
+				for y in x.items():
+					size+=1
+			size+=1*len(info)
+			browsepad.resize(size+20,curses.COLS-1)
+			for num,inf in enumerate(info):	
+				for curr in inf.items(): 
+					browsepad.addstr(curr[0],curses.A_BOLD)
+					browsepad.addstr('"'+curr[1]+'"\n')
+				if num<len(info):
+					browsepad.addstr("\n\n")
+		browsepad.addstr("\n[Press RETURN]",curses.A_BOLD)
+					
+	do_draw_info()
+		
+	screen.refresh()
+	browsepad.refresh(scroll_pos,0, *browsepad_coords)
+		
+	while True:
+		c=screen.getch()
+			
+		if c==curses.KEY_DOWN and scroll_pos+curses.LINES-1-browsepad_coords[0]<=browsepad.getyx()[0]: #Scroll down
+			scroll_pos+=1
+		elif c==curses.KEY_UP and scroll_pos>0: #Scroll up
+			scroll_pos-=1
+		elif c==curses.KEY_ENTER or c == 10 or c == 13:
+			break
+		screen.refresh()
+		browsepad.refresh(scroll_pos,0, *browsepad_coords)
+	screen.touchwin()
+
+def browsemod():
+	if curses.has_colors():
+		curses.init_pair(1,curses.COLOR_GREEN,curses.COLOR_BLACK)
+		curses.init_pair(2,curses.COLOR_CYAN,curses.COLOR_BLACK)
+		
+	help_string="↑ - scroll up, ↓ - scroll down, RETURN - select, D - delete, BACKSPACE - back, Q - main menu, ? - info"
+	
+	screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
+	
+	rectangle(screen, 1,1, curses.LINES-1,curses.COLS-2)
+	
+	browsepad=curses.newpad(curses.LINES-1,curses.COLS-1)
+		
+	browsepad_coords=2,2, curses.LINES-2,curses.COLS-3
+	scroll_pos=0
+	
+	screen.refresh()
+	
+	all_progs=cats_parser.getAllProgs()
+	
+	main_list=list(all_progs)
+	
+	
+	installed=cats_parser.getInsProgs()
+	
+	for num,i in enumerate(installed):
+		if re.search("virtual",i):
+			continue
+		s=re.search("(?P<main>.+)-(?P<sub>.+)/(?P<name>.+)",i)
+		installed[num]=[s.group("main"),s.group("sub"),s.group("name")]
+	
+	browsepad.resize(len(all_progs)+1, curses.COLS-1)
+	
+	scroll_pos=0
+	selected_pos=0
+	
+	def do_main():
+		browsepad.clear()
+		for num,main in enumerate(main_list):
+			if num==selected_pos:
+				if curses.has_colors():
+					browsepad.addstr(main+"\n",curses.color_pair(2))
+				else:
+					browsepad.addstr(main+"\n",curses.A_BOLD)
+			else:
+				browsepad.addstr(main+"\n")
+								
+	do_main()
+	screen.refresh()
+	browsepad.refresh(scroll_pos,0, *browsepad_coords)
+	
+	while True:
+		c=screen.getch()
+		if c==curses.KEY_UP and selected_pos>0:
+			selected_pos-=1
+		elif c==curses.KEY_DOWN and selected_pos+1<=len(all_progs)-1:
+			selected_pos+=1
+		if c==curses.KEY_DOWN and scroll_pos+curses.LINES-1<=len(all_progs)+1: #Scroll down
+			scroll_pos+=1
+		elif c==curses.KEY_UP and scroll_pos>0: #Scroll up
+			scroll_pos-=1
+		elif c==81 or c==113: #Exit to main
+			main(screen)
+			break
+		elif c==curses.KEY_ENTER or c == 10 or c == 13:
+			sub_list=list(all_progs[main_list[selected_pos]].keys())
+			browsepad.resize(len(sub_list)+1,curses.COLS-1)
+			browsepad.clear()
+			screen.touchwin()
+			
+			sub_selected_pos=0
+			sub_scroll_pos=0
+			
+			def do_sub():
+				browsepad.clear()
+				for num,sb in enumerate(sub_list):
+					if num==sub_selected_pos:
+						if curses.has_colors():
+							browsepad.addstr(sb+"\n",curses.color_pair(2))
+						else:
+							browsepad.addstr(sb+"\n",curses.A_BOLD)
+					else:
+						browsepad.addstr(sb+"\n")
+			do_sub()
+			screen.refresh()
+			browsepad.refresh(sub_scroll_pos,0, *browsepad_coords)
+			while True:
+				c=screen.getch()
+				if c==curses.KEY_UP and sub_selected_pos>0:
+					sub_selected_pos-=1
+				elif c==curses.KEY_DOWN and sub_selected_pos+1<=len(sub_list)-1:
+					sub_selected_pos+=1
+				if c==curses.KEY_DOWN and sub_scroll_pos+curses.LINES-1<=len(sub_list)+1: #Scroll down
+					sub_scroll_pos+=1
+				elif c==curses.KEY_UP and sub_scroll_pos>0: #Scroll up
+					sub_scroll_pos-=1
+				elif c==81 or c==113: #Exit to main
+					main(screen)
+					break
+				elif c==curses.KEY_BACKSPACE or c==127:
+					browsepad.resize(len(all_progs)+1, curses.COLS-1)
+					screen.touchwin()
+					break
+				elif c==curses.KEY_ENTER or c == 10 or c == 13:
+						name_list=all_progs[main_list[selected_pos]][sub_list[sub_selected_pos]]
+						browsepad.resize(len(name_list)+1,curses.COLS-1)
+						browsepad.clear()
+						screen.touchwin()
+						
+						name_selected_pos=0
+						name_scroll_pos=0
+						def do_name():
+							browsepad.clear()
+							for num,sb in enumerate(name_list):
+								if [main_list[selected_pos],sub_list[sub_selected_pos],name_list[num]] in installed:
+									if curses.has_colors():
+										browsepad.addstr(sb,curses.color_pair(1))
+									else:
+										browsepad.addstr(sb,curses.A_STANDOUT)
+									if num==name_selected_pos:
+										if curses.has_colors():
+											browsepad.addstr("<=",curses.color_pair(2))
+										else:
+											browsepad.addstr("<=",curses.A_BOLD)
+									browsepad.addstr("\n")
+								elif num==name_selected_pos:
+									if curses.has_colors():
+										browsepad.addstr(sb+"\n",curses.color_pair(2))
+									else:
+										browsepad.addstr(sb+"\n",curses.A_BOLD)
+								else:
+									browsepad.addstr(sb+"\n")
+						
+						do_name()
+						screen.refresh()
+						browsepad.refresh(name_scroll_pos,0, *browsepad_coords)
+						
+						while True:
+							c=screen.getch()
+							if c==curses.KEY_UP and name_selected_pos>0:
+								name_selected_pos-=1
+							elif c==curses.KEY_DOWN and name_selected_pos+1<=len(name_list)-1:
+								name_selected_pos+=1
+							if c==curses.KEY_DOWN and name_scroll_pos+curses.LINES-1<=len(name_list)+1: #Scroll down
+								name_scroll_pos+=1
+							elif c==curses.KEY_UP and name_scroll_pos>0: #Scroll up
+								name_scroll_pos-=1
+							elif c==81 or c==113: #Exit to main
+								main(screen)
+								break
+							elif c==curses.KEY_BACKSPACE or c==127:
+								browsepad.resize(len(sub_list)+1, curses.COLS-1)
+								screen.touchwin()
+								break
+							elif c==63:
+								package_info(
+									browsepad=browsepad,
+									browsepad_coords=browsepad_coords,
+									main=main_list[selected_pos],
+									sub=sub_list[sub_selected_pos],
+									name=name_list[name_selected_pos])	
+								browsepad.resize(len(name_list)+1,curses.COLS-1)
+									
+							elif c==curses.KEY_ENTER or c==10 or c==13:
+								try:
+									install(
+									main_list[selected_pos]+"-"+sub_list[sub_selected_pos]+"/"+name_list[name_selected_pos],
+									browsepad,
+									browsepad_coords
+									)
+									installed=cats_parser.getInsProgs()
+									for num,i in enumerate(installed):
+										if re.search("virtual",i):
+											continue
+										s=re.search("(?P<main>.+)-(?P<sub>.+)/(?P<name>.+)",i)
+										installed[num]=[s.group("main"),s.group("sub"),s.group("name")]
+								except KeyboardInterrupt:
+									pass
+									
+								finally:
+									browsepad.resize(len(name_list)+1,curses.COLS-1)
+							elif c==68 or c==100:
+								try:
+									delete(
+									main_list[selected_pos]+"-"+sub_list[sub_selected_pos]+"/"+name_list[name_selected_pos],
+									browsepad,
+									browsepad_coords
+									)
+									installed=cats_parser.getInsProgs()
+									for num,i in enumerate(installed):
+										if re.search("virtual",i):
+											continue
+										s=re.search("(?P<main>.+)-(?P<sub>.+)/(?P<name>.+)",i)
+										installed[num]=[s.group("main"),s.group("sub"),s.group("name")]
+										
+								except KeyboardInterrupt:
+									pass
+									
+								finally:
+									browsepad.resize(len(name_list)+1,curses.COLS-1)						
+						
+							do_name()
+							screen.refresh()
+							browsepad.refresh(name_scroll_pos,0, *browsepad_coords)
+							
+				do_sub()
+				screen.refresh()
+				browsepad.refresh(sub_scroll_pos,0, *browsepad_coords)
+			
+			
+		do_main()
+		screen.refresh()
+		browsepad.refresh(scroll_pos,0, *browsepad_coords)
+
+def searchmod():
+	if curses.has_colors():
+		curses.init_pair(1,curses.COLOR_GREEN,curses.COLOR_BLACK)
+		curses.init_pair(2,curses.COLOR_CYAN,curses.COLOR_BLACK)
+	searchwin=curses.newwin(1,curses.COLS-3, 3,2)
+	resultpad=curses.newpad(curses.LINES,curses.COLS-1)
+	screen.addstr(5,3, "↑ - scroll up, ↓ - scroll down, S - re-search, Q - main menu, ESC - cancel input, RETURN - install, D - delete, ? - info")
+
+	scroll_pos=0
+	selected_pos=0
+
+	rectangle(screen, 2,1, 4,curses.COLS-1)
+	rectangle(screen, 6,2 ,curses.LINES-1,curses.COLS-2)
+
+	screen.refresh()
+
+	resultpad_coords=7,3, curses.LINES-2,curses.COLS-3
+
+	resultpad.refresh(scroll_pos,0, *resultpad_coords)
+
+
+	box = Textbox(searchwin)
+
+	def do_command(ch):
+		if ch == 10: #Enter
+			return 7
+		elif ch == 127: # Backspace
+			return 8
+		elif ch==27:
+			main(screen)
+			die()
+		box.do_command(ch)
+
+	curses.curs_set(2)
+	box.edit(do_command)
+	curses.curs_set(0)
+
+	resultpad.addstr("Loading~")
+	screen.refresh()
+	resultpad.refresh(scroll_pos,0, *resultpad_coords)
+
+	found=cats_parser.search(box.gather())
+	installed=cats_parser.getInsProgs()
+
+	resultpad.clear()
+	screen.refresh()
+	resultpad.refresh(scroll_pos,0, *resultpad_coords)
+
+	resultpad.resize(len(found)+1,curses.COLS-1)
+	
+	def do_draw(first):
+		resultpad.clear()
+		for num,f in enumerate(found):
+			global target
+			if first:
+				target=f[0]
+				f.pop(0)
+			for ff in f:	 
+				if "".join(f) in installed:
+					if curses.has_colors():
+						resultpad.addstr("".join(f),curses.color_pair(1))
+					else:
+						resultpad.addstr("".join(f),curses.A_STANDOUT)
+					break
+				else:
+					if ff==target:
+						resultpad.addstr(ff, curses.A_BOLD)
+					else:
+						resultpad.addstr(ff)
+			if num==selected_pos:
+				if curses.has_colors():
+					resultpad.addstr(" <=",curses.color_pair(2))
+				else:
+					resultpad.addstr(" <=", curses.A_BOLD)
+			resultpad.addstr("\n")
+			
+	do_draw(True)
+	screen.refresh()
+	resultpad.refresh(scroll_pos,0, *resultpad_coords)
+	while True:
+		c=screen.getch()
+		if c==curses.KEY_DOWN and selected_pos+1<len(found):
+			selected_pos+=1
+		if c==curses.KEY_UP and selected_pos>0:
+			selected_pos-=1	
+		if c==curses.KEY_DOWN and scroll_pos+1+curses.LINES-2-6<=len(found): #Scroll down
+			scroll_pos+=1
+			screen.refresh()
+			resultpad.refresh(scroll_pos,0, *resultpad_coords)
+		elif c==curses.KEY_UP and scroll_pos>0: #Scroll up
+			scroll_pos-=1
+		elif c==81 or c==113: #Exit to main
+			main(screen)
+			break
+		elif c==115 or c==83:
+			searchmod()
+			break
+		elif c==63:
+			rName=re.findall("(?P<main>.+)\-(?P<sub>.+)/(?P<name>.+)","".join(found[selected_pos]))[0]
+			package_info(
+				browsepad=resultpad,
+				browsepad_coords=resultpad_coords,
+				main=rName[0],
+				sub=rName[1],
+				name=rName[2])
+			resultpad.resize(len(found)+1,curses.COLS-1)
+			screen.touchwin()
+			
+		elif c==curses.KEY_ENTER or c == 10 or c == 13:
+			try:
+				install("".join(found[selected_pos]), resultpad, resultpad_coords)
+				installed=cats_parser.getInsProgs()
+			except KeyboardInterrupt:
+				pass
+			finally:
+				resultpad.resize(len(found)+1,curses.COLS-1)
+				screen.touchwin()
+		elif c==68 or c==100:
+			try:
+				delete("".join(found[selected_pos]), resultpad, resultpad_coords)
+				installed=cats_parser.getInsProgs()
+			except KeyboardInterrupt:
+				pass
+			finally:
+				resultpad.resize(len(found)+1,curses.COLS-1)	
+				screen.touchwin()
+			
+		do_draw(False)
+		screen.refresh()
+		resultpad.refresh(scroll_pos,0, *resultpad_coords)
+		
+def init():
+	curses.noecho()
+	curses.cbreak()
+	screen.keypad(True)
+	screen.clear()
+	curses.curs_set(0)
+	if curses.has_colors():
+		curses.start_color()
+	init_string="S~search B~browse Q~quit"
+	screen.addstr(0,int((curses.COLS-1-len(init_string))/2), init_string)
+	screen.refresh()
+
+def die():
+	curses.nocbreak()
+	screen.keypad(False)
+	curses.echo()
+	curses.endwin()
+	exit(0)
+
+def main(screen):
+	init()
+	
+	screen.refresh()
+
+	key=screen.getkey()
+	if key=="s" or key=="S":
+		searchmod()
+	elif key=="b" or key=="B":
+		browsemod()
+
+	elif key=="q" or key=="Q":
+		die()
+
+	else:
+		wrapper(main)
+	die()
+
+wrapper(main)
