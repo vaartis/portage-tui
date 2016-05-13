@@ -172,8 +172,11 @@ def package_info(browsepad,browsepad_coords,main,sub,name):
 				for curr in inf.items(): 
 					browsepad.addstr(curr[0],curses.A_BOLD)
 					browsepad.addstr('"'+curr[1]+'"\n')
-				if num<len(info):
-					browsepad.addstr("\n\n")
+				if num<len(info)-1:
+					browsepad.addstr("\n")
+					for _ in range(0,curses.COLS-1): browsepad.addch(curses.ACS_HLINE)
+					browsepad.addstr("\n")
+					
 		browsepad.addstr("\n[Press RETURN]",curses.A_BOLD)
 					
 	do_draw_info()
