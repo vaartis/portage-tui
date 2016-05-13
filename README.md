@@ -1,5 +1,5 @@
 # portage-tui
-Portage termnal user interface
+Portage terminal user interface
 
 # Deps
 * pexpect
