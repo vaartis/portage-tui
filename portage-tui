@@ -4,10 +4,11 @@ from curses import wrapper
 from curses.textpad import Textbox, rectangle
 import cats_parser
 import os
-os.environ.setdefault('ESCDELAY', '25')
+from os.path import isfile, exists
 import re
 import pexpect
 import getpass
+os.environ.setdefault('ESCDELAY', '25')
 
 screen = curses.initscr()
 
@@ -59,14 +60,11 @@ def install(full_name,browsepad,browsepad_coords):
 	screen.refresh()
 	browsepad.refresh(0,0, *browsepad_coords)
 	
-	if curses.has_colors():
-		curses.init_pair(1, curses.COLOR_GREEN,curses.COLOR_BLACK)
-	
 	for d in deps:
 		portage.expect("Emerging.+")
 		
 		if curses.has_colors():
-			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",COLOR_GREEN)
 		else:
 									
 			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.A_BOLD)
@@ -77,7 +75,7 @@ def install(full_name,browsepad,browsepad_coords):
 		portage.expect("Installing.+")
 										
 		if curses.has_colors():
-			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",COLOR_GREEN)
 		else:							
 			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.A_BOLD)
 										
@@ -134,8 +132,7 @@ def delete(full_name,browsepad,browsepad_coords):
 	try:
 		portage.expect("Unmerging.+"+full_name+".*",timeout=10)
 		if curses.has_colors():
-			curses.init_pair(1, curses.COLOR_GREEN,curses.COLOR_BLACK)
-			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",curses.color_pair(1))
+			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n",COLOR_GREEN)
 		else:
 			browsepad.addstr(portage.after.decode("utf-8").rstrip()+"\n")
 	except pexpect.TIMEOUT:
@@ -197,11 +194,164 @@ def package_info(browsepad,browsepad_coords,main,sub,name):
 		browsepad.refresh(scroll_pos,0, *browsepad_coords)
 	screen.touchwin()
 
-def browsemod():
+def usemod():
 	if curses.has_colors():
-		curses.init_pair(1,curses.COLOR_GREEN,curses.COLOR_BLACK)
-		curses.init_pair(2,curses.COLOR_CYAN,curses.COLOR_BLACK)
-		
+		curses.init_pair(3,curses.COLOR_RED,curses.COLOR_BLACK)
+		curses.init_pair(4,curses.COLOR_BLUE,curses.COLOR_BLACK)
+		COLOR_RED=curses.color_pair(3)
+		COLOR_BLUE=curses.color_pair(4)
+	help_string="↑ - scroll up, ↓ - scroll down, RETURN - edit, Q - main menu"
+	
+	screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
+	
+	result={}
+	if isfile("/etc/portage/package.use"):
+		if exists("package.use"):
+			f=open("package.use")
+		else:
+			f=open("/etc/portage/package.use")
+		for line in f:
+			if not re.match("^\s+$",line):
+				if line.rstrip()[0]=="#":
+					continue
+				else:
+					fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+					result.update({fo.group("name"):fo.group("flags").split(" ")})
+		f.close()
+	
+	usepad_coords=2,2, curses.LINES-2,curses.COLS-3
+	
+	usepad=curses.newpad(curses.LINES-1,curses.COLS-1)
+	
+	rectangle(screen, 1,1, curses.LINES-1,curses.COLS-2)
+	
+	usepad.resize(len(result.keys())+1, curses.COLS-1)
+	
+	selected_pos=0
+	scroll_pos=0
+	prog_list=list(result.keys())
+	
+	def do_draw():
+		usepad.clear()
+		for num,prog in enumerate(prog_list):
+			if num==selected_pos:
+				if curses.has_colors():
+					usepad.addstr(prog,COLOR_CYAN)
+				else:
+					usepad.addstr(prog,curses.A_BOLD)
+			else:
+				usepad.addstr(prog)
+			usepad.addstr(" [ ")
+			
+			for fl in result[prog]:
+				if re.match("-",fl):
+					usepad.addstr(fl, COLOR_BLUE)
+				else:
+					usepad.addstr(fl, COLOR_RED)
+				usepad.addstr(" ")
+			usepad.addstr("]")
+					
+			usepad.addstr("\n")
+	
+	do_draw()
+	screen.refresh()
+	usepad.refresh(0,0, *usepad_coords)
+	
+	while True:
+		c=screen.getch()
+		if c==curses.KEY_DOWN and selected_pos+1<len(prog_list):
+			selected_pos+=1
+		if c==curses.KEY_UP and selected_pos>0:
+			selected_pos-=1	
+		if c==curses.KEY_DOWN and scroll_pos+curses.LINES-2<=len(prog_list): #Scroll down
+			scroll_pos+=1
+		elif c==curses.KEY_UP and scroll_pos>0: #Scroll up
+			scroll_pos-=1
+		elif c==81 or c==113: #Exit to main
+			main(screen)
+			break
+		elif c==curses.KEY_ENTER or c == 10 or c == 13:
+			global got_pass
+			editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
+			rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
+			content=" ".join(result[prog_list[selected_pos]])
+			
+			if getpass.getuser()=="root":
+				pass
+			else:
+				if "got_pass" not in globals():
+					sudo=pexpect.spawn("sudo echo")
+					sudo.expect(".+\:")
+					editwin.addstr("Password:")
+					screen.refresh()
+					usepad.refresh(scroll_pos,0, *usepad_coords)
+					got_pass=editwin.getstr()
+					editwin.clear()
+			
+			editwin.addstr(content)
+			editwin.addstr("|",COLOR_RED)
+			screen.refresh()
+			usepad.refresh(scroll_pos,0, *usepad_coords)
+			while True:
+				b=screen.getch()
+				if b==curses.KEY_BACKSPACE or b==127:
+					content=content[:-1]
+				elif b==curses.KEY_ENTER or b == 10 or b == 13:
+					break
+				else:
+					content+=chr(b)
+					
+				editwin.clear()
+				editwin.addstr(content)
+				editwin.addstr("|",COLOR_RED)
+				
+				usepad.refresh(scroll_pos,0, *usepad_coords)
+				screen.refresh()
+			f=open("/etc/portage/package.use","r")
+			read=f.read()
+			f.close()
+			read=re.sub(" ".join(result[prog_list[selected_pos]]),content ,read)
+			result={}
+			if getpass.getuser()=="root":
+				pexpect.run("cp /etc/portage/package.use /etc/portage/package.use.bak")
+				f=open("/etc/portage/package.use","w")
+				f.write(read)
+				f.close()
+				
+				if isfile("/etc/portage/package.use"):
+					f=open("/etc/portage/package.use")
+					for line in f:
+						if not re.match("^\s+$",line):
+							if line.rstrip()[0]=="#":
+								continue
+							else:
+								fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+								result.update({fo.group("name"):fo.group("flags").split(" ")})
+					f.close()
+					
+			else:
+				sudo=pexpect.spawn("""cp /etc/portage/package.use /etc/portage/package.use.bak; sudo python -c 'f=open("/etc/portage/package.use","w"); f.write(\"\"\"{}\"\"\"); f.close()' """.format(read))
+				sudo.expect(".+\:")
+				sudo.sendline(got_pass)
+				
+				read=read.split("\n")
+				
+				for line in read:
+					if line!="":
+						if not re.match("^\s+$",line):
+							if line.rstrip()[0]=="#":
+								continue
+							else:
+								fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+								result.update({fo.group("name"):fo.group("flags").split(" ")})
+							
+			prog_list=list(result.keys())
+			
+		do_draw()
+		screen.refresh()
+		usepad.refresh(scroll_pos,0, *usepad_coords)
+
+def browsemod():		
 	help_string="↑ - scroll up, ↓ - scroll down, RETURN - select, D - delete, BACKSPACE - back, Q - main menu, ? - info"
 	
 	screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
@@ -238,7 +388,7 @@ def browsemod():
 		for num,main in enumerate(main_list):
 			if num==selected_pos:
 				if curses.has_colors():
-					browsepad.addstr(main+"\n",curses.color_pair(2))
+					browsepad.addstr(main+"\n",COLOR_CYAN)
 				else:
 					browsepad.addstr(main+"\n",curses.A_BOLD)
 			else:
@@ -275,7 +425,7 @@ def browsemod():
 				for num,sb in enumerate(sub_list):
 					if num==sub_selected_pos:
 						if curses.has_colors():
-							browsepad.addstr(sb+"\n",curses.color_pair(2))
+							browsepad.addstr(sb+"\n",COLOR_CYAN)
 						else:
 							browsepad.addstr(sb+"\n",curses.A_BOLD)
 					else:
@@ -313,18 +463,18 @@ def browsemod():
 							for num,sb in enumerate(name_list):
 								if [main_list[selected_pos],sub_list[sub_selected_pos],name_list[num]] in installed:
 									if curses.has_colors():
-										browsepad.addstr(sb,curses.color_pair(1))
+										browsepad.addstr(sb,COLOR_GREEN)
 									else:
 										browsepad.addstr(sb,curses.A_STANDOUT)
 									if num==name_selected_pos:
 										if curses.has_colors():
-											browsepad.addstr("<=",curses.color_pair(2))
+											browsepad.addstr("<=",COLOR_CYAN)
 										else:
 											browsepad.addstr("<=",curses.A_BOLD)
 									browsepad.addstr("\n")
 								elif num==name_selected_pos:
 									if curses.has_colors():
-										browsepad.addstr(sb+"\n",curses.color_pair(2))
+										browsepad.addstr(sb+"\n",COLOR_CYAN)
 									else:
 										browsepad.addstr(sb+"\n",curses.A_BOLD)
 								else:
@@ -412,9 +562,6 @@ def browsemod():
 		browsepad.refresh(scroll_pos,0, *browsepad_coords)
 
 def searchmod():
-	if curses.has_colors():
-		curses.init_pair(1,curses.COLOR_GREEN,curses.COLOR_BLACK)
-		curses.init_pair(2,curses.COLOR_CYAN,curses.COLOR_BLACK)
 	searchwin=curses.newwin(1,curses.COLS-3, 3,2)
 	resultpad=curses.newpad(curses.LINES,curses.COLS-1)
 	screen.addstr(5,3, "↑ - scroll up, ↓ - scroll down, S - re-search, Q - main menu, ESC - cancel input, RETURN - install, D - delete, ? - info")
@@ -471,7 +618,7 @@ def searchmod():
 			for ff in f:	 
 				if "".join(f) in installed:
 					if curses.has_colors():
-						resultpad.addstr("".join(f),curses.color_pair(1))
+						resultpad.addstr("".join(f),COLOR_GREEN)
 					else:
 						resultpad.addstr("".join(f),curses.A_STANDOUT)
 					break
@@ -482,7 +629,7 @@ def searchmod():
 						resultpad.addstr(ff)
 			if num==selected_pos:
 				if curses.has_colors():
-					resultpad.addstr(" <=",curses.color_pair(2))
+					resultpad.addstr(" <=",COLOR_CYAN)
 				else:
 					resultpad.addstr(" <=", curses.A_BOLD)
 			resultpad.addstr("\n")
@@ -498,8 +645,6 @@ def searchmod():
 			selected_pos-=1	
 		if c==curses.KEY_DOWN and scroll_pos+1+curses.LINES-2-6<=len(found): #Scroll down
 			scroll_pos+=1
-			screen.refresh()
-			resultpad.refresh(scroll_pos,0, *resultpad_coords)
 		elif c==curses.KEY_UP and scroll_pos>0: #Scroll up
 			scroll_pos-=1
 		elif c==81 or c==113: #Exit to main
@@ -550,7 +695,13 @@ def init():
 	curses.curs_set(0)
 	if curses.has_colors():
 		curses.start_color()
-	init_string="S~search B~browse Q~quit"
+		curses.init_pair(1,curses.COLOR_GREEN,curses.COLOR_BLACK)
+		curses.init_pair(2,curses.COLOR_CYAN,curses.COLOR_BLACK)
+		global COLOR_CYAN,COLOR_GREEN
+		COLOR_GREEN=curses.color_pair(1)
+		COLOR_CYAN=curses.color_pair(2)
+		
+	init_string="S~search B~browse U~use Q~quit"
 	screen.addstr(0,int((curses.COLS-1-len(init_string))/2), init_string)
 	screen.refresh()
 
@@ -571,6 +722,8 @@ def main(screen):
 		searchmod()
 	elif key=="b" or key=="B":
 		browsemod()
+	elif key=="u" or key=="U":
+		usemod()
 
 	elif key=="q" or key=="Q":
 		die()
@@ -579,4 +732,7 @@ def main(screen):
 		wrapper(main)
 	die()
 
-wrapper(main)
+try:
+	wrapper(main)
+except KeyboardInterrupt:
+	die()
