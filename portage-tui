@@ -271,81 +271,84 @@ def usemod():
 			main(screen)
 			break
 		elif c==curses.KEY_ENTER or c == 10 or c == 13:
-			global got_pass
-			editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
-			rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
-			content=" ".join(result[prog_list[selected_pos]])
-			
-			if getpass.getuser()=="root":
-				pass
-			else:
-				if "got_pass" not in globals():
-					sudo=pexpect.spawn("sudo echo")
-					sudo.expect(".+\:")
-					editwin.addstr("Password:")
-					screen.refresh()
-					usepad.refresh(scroll_pos,0, *usepad_coords)
-					got_pass=editwin.getstr()
-					editwin.clear()
-			
-			editwin.addstr(content)
-			editwin.addstr("|",COLOR_RED)
-			screen.refresh()
-			usepad.refresh(scroll_pos,0, *usepad_coords)
-			while True:
-				b=screen.getch()
-				if b==curses.KEY_BACKSPACE or b==127:
-					content=content[:-1]
-				elif b==curses.KEY_ENTER or b == 10 or b == 13:
-					break
+			try:
+				global got_pass
+				editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
+				rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
+				content=" ".join(result[prog_list[selected_pos]])
+				
+				if getpass.getuser()=="root":
+					pass
 				else:
-					content+=chr(b)
-					
-				editwin.clear()
+					if "got_pass" not in globals():
+						sudo=pexpect.spawn("sudo echo")
+						sudo.expect(".+\:")
+						editwin.addstr("Password:")
+						screen.refresh()
+						usepad.refresh(scroll_pos,0, *usepad_coords)
+						got_pass=editwin.getstr()
+						editwin.clear()
+				
 				editwin.addstr(content)
 				editwin.addstr("|",COLOR_RED)
-				
-				usepad.refresh(scroll_pos,0, *usepad_coords)
 				screen.refresh()
-			f=open("/etc/portage/package.use","r")
-			read=f.read()
-			f.close()
-			read=re.sub(" ".join(result[prog_list[selected_pos]]),content ,read)
-			result={}
-			if getpass.getuser()=="root":
-				pexpect.run("cp /etc/portage/package.use /etc/portage/package.use.bak")
-				f=open("/etc/portage/package.use","w")
-				f.write(read)
+				usepad.refresh(scroll_pos,0, *usepad_coords)
+				while True:
+					b=screen.getch()
+					if b==curses.KEY_BACKSPACE or b==127:
+						content=content[:-1]
+					elif b==curses.KEY_ENTER or b == 10 or b == 13:
+						break
+					else:
+						content+=chr(b)
+						
+					editwin.clear()
+					editwin.addstr(content)
+					editwin.addstr("|",COLOR_RED)
+					
+					usepad.refresh(scroll_pos,0, *usepad_coords)
+					screen.refresh()
+				f=open("/etc/portage/package.use","r")
+				read=f.read()
 				f.close()
-				
-				if isfile("/etc/portage/package.use"):
-					f=open("/etc/portage/package.use")
-					for line in f:
-						if not re.match("^\s+$",line):
-							if line.rstrip()[0]=="#":
-								continue
-							else:
-								fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
-								result.update({fo.group("name"):fo.group("flags").split(" ")})
+				read=re.sub(" ".join(result[prog_list[selected_pos]]),content ,read)
+				result={}
+				if getpass.getuser()=="root":
+					pexpect.run("cp /etc/portage/package.use /etc/portage/package.use.bak")
+					f=open("/etc/portage/package.use","w")
+					f.write(read)
 					f.close()
 					
-			else:
-				sudo=pexpect.spawn("""cp /etc/portage/package.use /etc/portage/package.use.bak; sudo python -c 'f=open("/etc/portage/package.use","w"); f.write(\"\"\"{}\"\"\"); f.close()' """.format(read))
-				sudo.expect(".+\:")
-				sudo.sendline(got_pass)
-				
-				read=read.split("\n")
-				
-				for line in read:
-					if line!="":
-						if not re.match("^\s+$",line):
-							if line.rstrip()[0]=="#":
-								continue
-							else:
-								fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
-								result.update({fo.group("name"):fo.group("flags").split(" ")})
-							
-			prog_list=list(result.keys())
+					if isfile("/etc/portage/package.use"):
+						f=open("/etc/portage/package.use")
+						for line in f:
+							if not re.match("^\s+$",line):
+								if line.rstrip()[0]=="#":
+									continue
+								else:
+									fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+									result.update({fo.group("name"):fo.group("flags").split(" ")})
+						f.close()
+						
+				else:
+					sudo=pexpect.spawn("""cp /etc/portage/package.use /etc/portage/package.use.bak; sudo python -c 'f=open("/etc/portage/package.use","w"); f.write(\"\"\"{}\"\"\"); f.close()' """.format(read))
+					sudo.expect(".+\:")
+					sudo.sendline(got_pass)
+					
+					read=read.split("\n")
+					
+					for line in read:
+						if line!="":
+							if not re.match("^\s+$",line):
+								if line.rstrip()[0]=="#":
+									continue
+								else:
+									fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+									result.update({fo.group("name"):fo.group("flags").split(" ")})
+								
+				prog_list=list(result.keys())
+			except KeyboardInterrupt:
+				pass
 			
 		do_draw()
 		screen.refresh()
