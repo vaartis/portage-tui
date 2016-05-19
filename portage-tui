@@ -195,12 +195,13 @@ def package_info(browsepad,browsepad_coords,main,sub,name):
 	screen.touchwin()
 
 def usemod():
+	global got_pass
 	if curses.has_colors():
 		curses.init_pair(3,curses.COLOR_RED,curses.COLOR_BLACK)
 		curses.init_pair(4,curses.COLOR_BLUE,curses.COLOR_BLACK)
 		COLOR_RED=curses.color_pair(3)
 		COLOR_BLUE=curses.color_pair(4)
-	help_string="↑ - scroll up, ↓ - scroll down, RETURN - edit, Q - main menu"
+	help_string="↑ - scroll up, ↓ - scroll down, A - add, D - delete, RETURN - edit, Q - main menu"
 	
 	screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
 	
@@ -272,7 +273,6 @@ def usemod():
 			break
 		elif c==curses.KEY_ENTER or c == 10 or c == 13:
 			try:
-				global got_pass
 				editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
 				rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
 				content=" ".join(result[prog_list[selected_pos]])
@@ -349,7 +349,152 @@ def usemod():
 				prog_list=list(result.keys())
 			except KeyboardInterrupt:
 				pass
-			
+		elif c==65 or c==97:
+			try:
+				editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
+				rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
+				content=""
+				
+				if getpass.getuser()=="root":
+					pass
+				else:
+					if "got_pass" not in globals():
+						sudo=pexpect.spawn("sudo echo")
+						sudo.expect(".+\:")
+						editwin.addstr("Password:")
+						screen.refresh()
+						usepad.refresh(scroll_pos,0, *usepad_coords)
+						got_pass=editwin.getstr()
+						editwin.clear()
+				
+				editwin.addstr(content)
+				editwin.addstr("|",COLOR_RED)
+				screen.refresh()
+				usepad.refresh(scroll_pos,0, *usepad_coords)
+				while True:
+					b=screen.getch()
+					if b==curses.KEY_BACKSPACE or b==127:
+						content=content[:-1]
+					elif b==curses.KEY_ENTER or b == 10 or b == 13:
+						break
+					else:
+						content+=chr(b)
+						
+					editwin.clear()
+					editwin.addstr(content)
+					editwin.addstr("|",COLOR_RED)
+					
+					usepad.refresh(scroll_pos,0, *usepad_coords)
+					screen.refresh()
+				f=open("/etc/portage/package.use","a")
+				if getpass.getuser()=="root":
+					pexpect.run("cp /etc/portage/package.use /etc/portage/package.use.bak")
+					f.write(content)
+					
+					if isfile("/etc/portage/package.use"):
+						f=open("/etc/portage/package.use")
+						for line in f:
+							if not re.match("^\s+$",line):
+								if line.rstrip()[0]=="#":
+									continue
+								else:
+									fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+									result.update({fo.group("name"):fo.group("flags").split(" ")})
+						f.close()
+						
+				else:
+					sudo=pexpect.spawn("""cp /etc/portage/package.use /etc/portage/package.use.bak; sudo python -c 'f=open("/etc/portage/package.use","a"); f.write(\"\"\"{}\"\"\"); f.close()' """.format(content))
+					sudo.expect(".+\:")
+					sudo.sendline(got_pass)
+					
+					for line in read:
+						if line!="":
+							if not re.match("^\s+$",line):
+								if line.rstrip()[0]=="#":
+									continue
+								else:
+									fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+									result.update({fo.group("name"):fo.group("flags").split(" ")})
+				
+								
+				prog_list=list(result.keys())
+				usepad.resize(len(result.keys())+1, curses.COLS-1)
+			except KeyboardInterrupt:
+				pass	
+		elif c==68 or c==100:
+			try:
+				editwin=usepad.subwin(2, round(curses.COLS/2)-5, scroll_pos+1,round(curses.COLS/2)+1 )
+				rectangle(usepad, scroll_pos,round(curses.COLS/2), scroll_pos+3,round(curses.COLS-5)  )
+				
+				if getpass.getuser()=="root":
+					pass
+				else:
+					if "got_pass" not in globals():
+						sudo=pexpect.spawn("sudo echo")
+						sudo.expect(".+\:")
+						editwin.addstr("Password:")
+						screen.refresh()
+						usepad.refresh(scroll_pos,0, *usepad_coords)
+						got_pass=editwin.getstr()
+						editwin.clear()
+				
+				editwin.addstr("ARE YOU SURE? [Y/N]")
+				editwin.addstr(" ->",COLOR_RED)
+				screen.refresh()
+				usepad.refresh(scroll_pos,0, *usepad_coords)
+				while True:
+					b=screen.getkey()
+					if b=="N" or b=="n" or b=="Y" or b=="y":
+						break
+						
+					editwin.clear()
+					editwin.addstr("ARE YOU SURE? [Y/N]")
+					editwin.addstr(" ->",COLOR_RED)
+					
+					usepad.refresh(scroll_pos,0, *usepad_coords)
+					screen.refresh()
+				if b=="Y" or b=="y":	
+					f=open("/etc/portage/package.use","r")
+					read=f.read()
+					f.close()
+					read=re.sub(prog_list[selected_pos]+" "+" ".join(result[prog_list[selected_pos]]),"" ,read)
+					result={}
+					if getpass.getuser()=="root":
+						pexpect.run("cp /etc/portage/package.use /etc/portage/package.use.bak")
+						f=open("/etc/portage/package.use","w")
+						f.write(read)
+						f.close()
+						
+						if isfile("/etc/portage/package.use"):
+							f=open("/etc/portage/package.use")
+							for line in f:
+								if not re.match("^\s+$",line):
+									if line.rstrip()[0]=="#":
+										continue
+									else:
+										fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+										result.update({fo.group("name"):fo.group("flags").split(" ")})
+							f.close()
+							
+					else:
+						sudo=pexpect.spawn("""cp /etc/portage/package.use /etc/portage/package.use.bak; sudo python -c 'f=open("/etc/portage/package.use","w"); f.write(\"\"\"{}\"\"\"); f.close()' """.format(read))
+						sudo.expect(".+\:")
+						sudo.sendline(got_pass)
+						
+						read=read.split("\n")
+						
+						for line in read:
+							if line!="":
+								if not re.match("^\s+$",line):
+									if line.rstrip()[0]=="#":
+										continue
+									else:
+										fo=re.match("(?P<name>\S+)\s+(?P<flags>.+)", line)
+										result.update({fo.group("name"):fo.group("flags").split(" ")})
+									
+					prog_list=list(result.keys())
+			except KeyboardInterrupt:
+				pass				
 		do_draw()
 		screen.refresh()
 		usepad.refresh(scroll_pos,0, *usepad_coords)
@@ -360,7 +505,7 @@ def browsemod():
 	try:
 		screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
 	except:
-		screen.addstr(0,0, help_string)
+		pass
 	
 	rectangle(screen, 1,1, curses.LINES-1,curses.COLS-2)
 	
