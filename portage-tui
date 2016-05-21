@@ -203,8 +203,11 @@ def usemod():
 		COLOR_BLUE=curses.color_pair(4)
 	help_string="↑ - scroll up, ↓ - scroll down, A - add, D - delete, RETURN - edit, Q - main menu"
 	
-	screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
-	
+	try:
+		screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
+	except:
+		screen.addstr(0,0, help_string)
+
 	result={}
 	if isfile("/etc/portage/package.use"):
 		if exists("package.use"):
@@ -505,7 +508,7 @@ def browsemod():
 	try:
 		screen.addstr(0,int((curses.COLS-1-len(help_string))/2), help_string)
 	except:
-		pass
+		screen.addstr(0,0, help_string)
 	
 	rectangle(screen, 1,1, curses.LINES-1,curses.COLS-2)
 	
