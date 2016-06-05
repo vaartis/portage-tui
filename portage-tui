@@ -22,9 +22,9 @@ def install(full_name,browsepad,browsepad_coords):
 	screen.touchwin()
 								
 	if getpass.getuser()=="root":
-		portage = pexpect.spawn("emerge --color=n -a "+full_name)
+		portage = pexpect.spawn("EMERGE_DEFAULT_OPT=\"\" emerge --color=n -a "+full_name)
 	else:
-		portage = pexpect.spawn("sudo emerge --color=n -a "+full_name)
+		portage = pexpect.spawn("sudo EMERGE_DEFAULT_OPT=\"\" emerge --color=n -a "+full_name)
 		if "got_pass" not in globals():		
 			portage.expect(".+\:", timeout=3)
 			browsepad.addstr("Password: ")
@@ -99,9 +99,9 @@ def delete(full_name,browsepad,browsepad_coords):
 	screen.touchwin()
 								
 	if getpass.getuser()=="root":
-		portage = pexpect.spawn("emerge --color=n -a --depclean "+full_name)
+		portage = pexpect.spawn("EMERGE_DEFAULT_OPT=\"\" emerge --color=n -a --depclean "+full_name)
 	else:
-		portage = pexpect.spawn("sudo emerge --color=n -a --depclean "+full_name)
+		portage = pexpect.spawn("sudo EMERGE_DEFAULT_OPT=\"\" emerge --color=n -a --depclean "+full_name)
 		if "got_pass" not in globals():		
 			portage.expect(".+\:", timeout=3)
 			browsepad.addstr("Password: ")
